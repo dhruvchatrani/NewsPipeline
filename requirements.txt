@@ -1,0 +1,14 @@
+google-generativeai
+python-dotenv
+pydantic
+requests
+beautifulsoup4
+streamlit
+langgraph
+langchain-google-genai
+langchain
+tavily-python
+pyyaml
+pytest
+fastapi
+uvicorn

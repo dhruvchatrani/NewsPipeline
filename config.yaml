@@ -1,0 +1,15 @@
+
+pipeline:
+  top_n_trends: 3
+  retry_limit: 3
+  article_word_count: 700
+
+scoring_matrix:
+  geopolitical_impact: 0.4
+  economic_consequences: 0.3
+  human_interest: 0.3
+
+search:
+  max_results_per_trend: 5
+  recursive_depth: 2
+  timeout_seconds: 60
