@@ -121,5 +121,3 @@ For detailed information on the RAG implementation and state transitions, please
     }
   ]
 }
-'''
-</details>
