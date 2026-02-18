@@ -30,7 +30,6 @@ ENV/
 .env
 
 # Project specific
-data/*.json
 data/history.json
 !data/.gitkeep
 

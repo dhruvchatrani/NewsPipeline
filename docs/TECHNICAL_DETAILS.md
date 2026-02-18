@@ -4,48 +4,68 @@ This document provides a deep dive into the architecture, logic, and design deci
 
 ##  System Architecture
 
-The system is designed as a modular pipeline to ensure robustness and clarity in data flow.
+The system is designed as a modular pipeline orchestrated by **LangGraph**, ensuring robustness and clarity in data flow through a state machine.
 
 ### 1. Ingestion Layer
-*   **Strategy**: Hybrid approach using official APIs (NewsAPI, Google Trends) for broad coverage and targeted scrapers for deep content.
+*   **Strategy**: Hybrid approach using official APIs (NewsAPI, Google Trends via RSS) for broad coverage and targeted scrapers for deep content.
+*   **Regional Support**: Parameterized ingestion supports filtering trends by `US`, `India`, or `Global`.
 *   **Resilience**: Implements exponential backoff and rotation between multiple data sources to mitigate API failures.
 
-### 2. Selection Layer (Trend Ranking Logic)
-*   **Algorithm**: The `trend_score` (010) is calculated based on:
-    *   **Velocity**: How fast the topic is gaining traction across sources.
-    *   **Authority**: Weighted score based on the reputation of the source.
-    *   **Clustering**: Frequency of the same event being reported under different headlines (Deduplication).
-*   **Deduplication**: Uses semantic embeddings (e.g., `text-embedding-3-small`) to cluster similar stories (e.g., "BTC Price" and "Bitcoin Surge") into a single trend.
+### 2. Selection Layer
+*   **Gemini-Driven Selection**: Uses `gemini-2.5-flash` to analyze raw trends, deduplicate overlapping stories, and filter against `data/history.json` to avoid repetitive coverage.
+*   **Scoring Matrix**: Trends are ranked based on a weighted matrix configured in `config.yaml`:
+    *   **Geopolitical Impact** (40%)
+    *   **Economic Consequences** (30%)
+    *   **Human Interest** (30%)
+*   **Deduplication**: Employs TF-IDF and Cosine Similarity (via `sklearn`) to merge similar news streams before LLM refinement.
 
-### 3. Research & Data Grounding
-*   **RAG (Retrieval-Augmented Generation)**: The system fetches full-text articles and search results for the top##  LangGraph Orchestration & Self-Correction
-The pipeline is orchestrated as a state machine using **LangGraph**. A key feature is the **Self-Correction Loop**:
-1. **Verification**: After generation, a Critic agent breaks the article into individual claims and performs NLI-style verification against research snippets.
-2. **Refinement**: If the article fails, the critique is sent back to the Generator for a targeted rewrite.
-3. **Loop Control**: The state tracks `revision_count` to prevent infinite loops, defaulting to an exit after the `retry_limit` (configured in `config.yaml`).
+### 3. Advanced Research & Recursive Data Grounding
+*   **Multi-Source Search**: Powered by **Tavily**, the research agent performs advanced deep searches to gather context from multiple independent publishers.
+*   **Recursive Gap Filling**: An LLM-driven "Gap Detector" analyzes initial search results to identify missing figures, dates, or names, triggering secondary targeted searches to fill those specific voids.
 
-##  Advanced Research Depth
-*   **Multi-Source Search**: Powered by **Tavily**, the research agent triggers secondary searches to gather context from 5+ independent publishers.
-*   **Recursive Gap Filling**: An LLM-driven "Gap Detector" identifies missing figures, dates, or names in the initial context and performs follow-up queries to fill those specific voids.
+### 4. Generation & Self-Correction
+*   **Factuality-First Prompting**: All articles are strictly grounded in retrieved research snippets; no "Pure LLM" hallucination is permitted.
+*   **Self-Correction Loop**: 
+    1. **Verification**: A Critic agent evaluates the draft against research snippets for hallucination and quality.
+    2. **Refinement**: If verification fails, the critique is sent back to the Generator for a targeted rewrite.
+    3. **Loop Control**: The state tracks `revision_count` to ensure exit after a `retry_limit` (defaulting to 3).
+*   **Quantified Quality**: Final articles undergo a "LLM-as-a-Judge" evaluation to produce a quality score.
 
-##  Selection Logic
-*   **Scoring Matrix**: Trends are ranked based on a weighted matrix of Geopolitical Impact (40%), Economic Consequences (30%), and Human Interest (30%).
-*   **History Persistence**: Avoids repetitive coverage by comparing current trends against `data/history.json` from previous executions.
+##  LangGraph Orchestration
+
+The pipeline is modeled as a directed acyclic graph (with loops for refinement) using the following nodes:
+
+| Node | Responsibility |
+| :--- | :--- |
+| **Ingest** | Fetches raw trends based on region. |
+| **Select** | Deduplicates and ranks trends using the scoring matrix. |
+| **Research** | Performs deep search and recursive gap filling. |
+| **Generate** | Drafts the initial article based on research. |
+| **Verify** | Checks for hallucinations and factual grounding. |
+| **Refine** | (Conditional) Rewrites articles that fail verification. |
+| **Evaluate** | Final LLM-as-a-Judge scoring before completion. |
+
+##  User Interface (Dashboard)
+
+A **Streamlit** dashboard provides a premium management interface for the pipeline:
+*   **Controls**: Trigger pipeline runs for specific regions (`Global`, `US`, `India`).
+*   **Execution Metrics**: Real-time tracking of execution time and date.
+*   **Article Review**: Expandable view of generated articles, category labeling, trend scores, and source links.
+*   **Transparency**: Option to view live console output for debug and monitoring.
+
+##  Current Tech Stack
+
+*   **Orchestration**: LangGraph
+*   **LLMs**: Google Gemini (gemini-2.5-flash)
+*   **Search/Research**: Tavily API
+*   **UI/Interface**: Streamlit
+*   **Core Logic**: Python (Pandas, Scikit-learn, BeautifulSoup)
+*   **Storage**: Local JSON persistence (`history.json`, `output.json`)
 
 ##  Design Trade-offs
 
 | Decision | Choice | Rationale |
 | :--- | :--- | :--- |
-| **Workflow** | Sequential Chains | Chosen for predictability and ease of debugging over autonomous agents for the core pipeline. |
-| **Storage** | In-memory / JSON | Minimal overhead for a daily run; avoids the need for a persistent database like PostgreSQL. |
-| **Logic** | Theory over Code | Prioritizes robust ranking algorithms and verification layers over complex crawling logic. |
-
-##  Quality Control
-*   **Factuality**: No "Pure LLM" generation is allowed. All drafts are strictly grounded in retrieved research snippets.
-*   **Deduplication**: Employs cosine similarity thresholds to merge overlapping news streams.
-*   **Error Handling**: If a search API fails, the system falls back to cached trends or secondary scrapers to ensure continuity.
-
-##  Potential Extensions (Bonus)
-*   **Verification Agent**: An asynchronous critique loop that provides a "Pass/Fail" on factual accuracy.
-*   **Multi-Region Support**: Parameterized ingestion to filter trends by `US`, `India`, or `Global`.
-*   **Dashboard**: A Streamlit interface for side-by-side comparison of trends and generated articles.
+| **Orchestration** | LangGraph State Machine | Superior to sequential chains for handling refinement loops and complex logic. |
+| **LLM Selection** | Gemini 2.5 Flash | Optimized for speed and reasoning performance in grounding tasks. |
+| **Persistence** | File-based JSON | Minimal overhead for high-velocity daily cycles; eliminates DB maintenance. |
