@@ -30,7 +30,7 @@ GEMINI_API_KEY=
 TAVILY_API_KEY=
 NEWS_API_KEY=
 ```
->Contact [Dhruv Chatrani](dhruv.chatrani@gmail.com) for API keys.
+>Contact [Dhruv Chatrani](mailto:dhruv.chatrani@gmail.com) for API keys.
 
 ##  Usage Guide
 
